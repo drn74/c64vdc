@@ -14,6 +14,10 @@ var c64vdc = function (args) {
             throw new Error('Arguments video not defined or null');
             return;
         }
+        if (typeof args.imgcharset == 'undefined' || args.imgcharset == "") {
+            throw new Error('Arguments video not defined or null');
+            return;
+        }
     } else {
         throw new Error('No arguments defined!');
         return;
@@ -37,8 +41,8 @@ var c64vdc = function (args) {
     this.srcdata = [];
     this.petscii = new Uint8Array((this.WIDTH / this.CWIDTH) * (this.HEIGHT / this.CHEIGHT)); //qui tutti i dati c64 come DATA (1000 bytes)
 
-    this.characterContainer;
     this.characterCanvas = [];
+    this.imgcharset = args.imgcharset;
 
     this.video.preload = "auto";
     this.video.src = args.video;
@@ -50,7 +54,6 @@ var c64vdc = function (args) {
             var counter = 0;
 
             this.video.addEventListener('loadeddata', function () {
-                //self.thumbs.innerHTML = "";
                 self.video.currentTime = counter;
             }, false);
 
@@ -61,6 +64,8 @@ var c64vdc = function (args) {
 
                 if (counter <= self.video.duration) {
                     self.video.currentTime = counter;
+                    var framecounterevent = new CustomEvent("framecounter", { "detail": counter });
+                    document.dispatchEvent(framecounterevent);
                 }
                 else {
                     // DONE
@@ -72,9 +77,49 @@ var c64vdc = function (args) {
         }.bind(this));
     }
 
+    this.cutImageUp = function () { 
+
+        return new Promise(function (resolve, reject) {
+
+            var self = this;
+            var image = new Image();
+            image.src = self.imgcharset;
+
+            var i = 0;
+            image.onload = function() {
+                for(var y = 0; y < 8; y++) {
+                    for(var x = 0; x < 32; x++){
+                        var canvas = document.createElement('canvas');
+                        canvas.width = 8;
+                        canvas.height = 8;
+                        var context = canvas.getContext('2d');
+                        context.drawImage(image, x * 8, y * 8, 8, 8, 0, 0, canvas.width, canvas.height);
+
+                        var pxbuf = self.greyscale(context, self.CWIDTH, self.CHEIGHT, true); //Skip Dither
+                        
+                        //... and as array data
+                        for (var px = 0; px < pxbuf.length; px++) {
+                            if (pxbuf[px] < 128)
+                                pxbuf[px] = 0;
+                            else
+                                pxbuf[px] = 255;
+                        }
+        
+                        self.characterCanvas.push(canvas);
+                        self.chardata[i] = pxbuf;
+                        i++;
+                    }
+                }
+
+                resolve(true);
+            }
+
+        }.bind(this));
+    }
+
     this.startPetsciiRender = function () {
         return new Promise(function (resolve, reject) {
-            console.log(1);
+            
             var self = this;
             var allPetscii = [];
             var output = {
@@ -82,62 +127,26 @@ var c64vdc = function (args) {
                 allpetscii: []
             }
 
-            for (var i = 0; i < self.CHARACTERS; i++) {
-                var charCanvas = document.createElement("canvas");
-                self.characterCanvas.push(charCanvas);
+            var myc = document.getElementById('mycontainer');
+            var canvas = document.createElement("canvas"); 
+            canvas.setAttribute("width", self.WIDTH);
+            canvas.setAttribute("height", self.HEIGHT);
+            self.context = canvas.getContext("2d");
+
+            for (var k = 0; k < self.frames.length; k++) {
+                self.source = self.frames[k];
+                self.context.drawImage(self.source, 0, 0, self.WIDTH, self.HEIGHT);
+                self.srcdata = self.greyscale(self.context, self.WIDTH, self.HEIGHT);
+                self.render();
+                output.cavases.push(self.cloneCanvas(canvas));
+                myc.appendChild(self.cloneCanvas(canvas));
+                output.allpetscii.push(self.petscii);
+                var petsciicounterevent = new CustomEvent("petsciicounter", { "detail": k });
+                document.dispatchEvent(petsciicounterevent);
             }
 
-            self.character = document.createElement("img");
+            resolve(output);
 
-            var i = 0;
-            self.character.onload = function () {
-
-                var charCanvas = self.characterCanvas[i];
-                var charContext = charCanvas.getContext("2d");
-
-                charContext.drawImage(self.character, 0, 0);
-
-                var pxbuf = self.greyscale(charContext, self.CWIDTH, self.CHEIGHT, true); //Skip Dither
-
-                //... and B&W
-                for (var px = 0; px < pxbuf.length; px++) {
-                    if (pxbuf[px] < 128)
-                        pxbuf[px] = 0;
-                    else
-                        pxbuf[px] = 255;
-                }
-
-                self.chardata[i] = pxbuf;
-                i++;
-                loadCharacter();
-                
-            };
-
-            var loadCharacter = function () {
-                if (i >= self.CHARACTERS) {
-
-                    var myc = document.getElementById('mycontainer');
-                    var canvas = document.createElement("canvas"); //document.getElementById('canvas');
-                    canvas.setAttribute("width", self.WIDTH);
-                    canvas.setAttribute("height", self.HEIGHT);
-                    self.context = canvas.getContext("2d");
-
-                    for (var k = 0; k < self.frames.length; k++) {
-                        self.source = self.frames[k];
-                        self.context.drawImage(self.source, 0, 0, self.WIDTH, self.HEIGHT);
-                        self.srcdata = self.greyscale(self.context, self.WIDTH, self.HEIGHT);
-                        self.render();
-                        output.cavases.push(self.cloneCanvas(canvas));
-                        myc.appendChild(self.cloneCanvas(canvas));
-                        output.allpetscii.push(self.petscii);
-                    }
-
-                    resolve(output);
-                }
-                self.character.src = self.CHARSET + "/" + i + ".gif";
-            };
-
-            loadCharacter();
         }.bind(this));
     };
 
@@ -322,22 +331,3 @@ var c64vdc = function (args) {
 
 };
 
-
-(function () {
-
-    var c = new c64vdc({
-        gap: 0.1,
-        video: "A1.mp4"
-    });
-
-    c.startVideoFramesCapture()
-    .then(function (data) {
-        console.log(">>>Tutti i frames del video catturati", data);
-        c.startPetsciiRender()
-        .then(function (data) {
-            console.log(">>> Tutti i frames elaborati e i codici petscii", data);
-        })
-    });
-
-
-})();

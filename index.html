@@ -1,12 +1,42 @@
 <!DOCTYPE html>
 <html>
-
 <head>
     <meta charset="utf-8">
+	<script src="c64vdc.js"></script>
 </head>
-
 <body>
     <div id='mycontainer'></div>
 </body>
-<script src="c64vdc.js"></script>
+
+<script>
+(function () {
+
+    var c = new c64vdc({
+        gap: 0.1,
+        video: "A1.mp4",
+        imgcharset: "charset_lower.png"
+    });
+
+    document.addEventListener("framecounter", function(e) {
+        console.log(e.detail); // Prints "Example of an event"
+    });
+
+    document.addEventListener("petsciicounter", function(e) {
+        console.log(e.detail); // Prints "Example of an event"
+    });
+
+    c.cutImageUp()
+    .then(function() {
+        c.startVideoFramesCapture()
+        .then(function (data) {
+            console.log(">>>IMAGES", data);
+            c.startPetsciiRender()
+            .then(function (data) {
+                console.log(">>>PETSCII", data);
+            })
+        });
+    });
+
+})();
+</script>
 </html>
